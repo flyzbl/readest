@@ -1069,6 +1069,18 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
     if (ttsControllerRef.current) {
       await handleStop(bookKey);
     } else {
+      // A stale toolbar flag can survive after the controller disappears.
+      // stopBook is a no-op without an active managed session, so clear the
+      // UI now or the headphones button stays stuck on the stop action.
+      setTTSEnabled(bookKey, false);
+      setIsPlaying(false);
+      setIsPaused(false);
+      setTtsClientsInitialized(false);
+      setShowIndicator(false);
+      setShowBackToCurrentTTSLocation(false);
+      setTtsController(null);
+      emitPlaybackState('stopped');
+      onRequestHidePanel?.();
       await ttsSessionManager.stopBook(getBookHashFromKey(bookKey), 'user');
     }
   };

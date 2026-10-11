@@ -645,6 +645,20 @@ describe('useTTSControl handleStop resilience (#4676)', () => {
     return ttsControllerInstances[0] as { shutdown: ReturnType<typeof vi.fn> };
   };
 
+  it('resets a stale toolbar flag if the controller and managed session are gone', async () => {
+    render(<Harness />);
+    const setTTSEnabled = getSetTTSEnabledMock();
+    setTTSEnabled.mockClear();
+    mockSessionManager.stopBook.mockClear();
+
+    await act(async () => {
+      await eventDispatcher.dispatch('tts-stop', { bookKey: 'book-1' });
+    });
+
+    expect(setTTSEnabled).toHaveBeenCalledWith('book-1', false);
+    expect(mockSessionManager.stopBook).toHaveBeenCalledWith('book', 'user');
+  });
+
   it('disables TTS even when controller.shutdown rejects', async () => {
     // Regression: a native teardown that throws (observed with iOS system TTS)
     // must not skip the state resets that turn the TTS icon off.

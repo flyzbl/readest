@@ -1,17 +1,21 @@
 # Personal self-host build and HTTP speech
 
-Use the upstream entitlement path: set `NEXT_PUBLIC_SELF_HOSTED=true` in an
-untracked `.env.local` before building the Tauri app. For a hosted web deployment,
-set `SELF_HOSTED=true` on the server (Docker already defaults to this). Tauri
-has no runtime-config route; its public flag must be present at build time.
-No subscription claims, quota checks, or payment gates are patched.
+This fork keeps Readest's upstream entitlement path but enables it by default for
+fork builds: `NEXT_PUBLIC_SELF_HOSTED=true` is tracked in both `.env.tauri` and
+`.env.web`. Docker/self-host deployments can still use the server-side
+`SELF_HOSTED=true` runtime flag. No subscription claims, quota checks, or payment
+gates are patched; the fork simply builds in the upstream-supported self-hosted
+mode.
 
 This enables the client features already covered by `isCustomizationAllowed`,
-including customization, custom translators and the existing Edge audio cache.
-It does not grant Readest Cloud storage, hosted AI credits, or access to paid
-Readest infrastructure. Use your own backend/keys for those services. The new
-speech provider sends requests directly to the endpoint you configure; it never
-uses Readest's API proxy or account token.
+including full customization, custom translators, third-party cloud sync
+(WebDAV / Google Drive / S3 / OneDrive), Offline Read Aloud downloads,
+Audiobookshelf offline downloads and Nearby BookDrop pairing. It does not grant
+Readest Cloud storage, hosted AI/translation credits, personal email-in service,
+or any other Readest-hosted infrastructure whose capacity is provided by their
+servers. Use your own backend/keys for those services. The new speech provider
+sends requests directly to the endpoint you configure; it never uses Readest's
+API proxy or account token.
 
 ## Configuration
 

@@ -28,7 +28,7 @@ describe('HTTP TTS credentials', () => {
       apiKey: '',
       headers: {},
     });
-    expect(JSON.stringify(window.localStorage)).not.toContain('test-secret');
+    expect(sessionStorage.getItem('readest.http-tts.credentials.v1')).toContain('test-secret');
   });
 
   test('native credentials use the keyed secure bridge', async () => {

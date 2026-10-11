@@ -11,6 +11,9 @@
 // base/rate^1.6, which is 0.60s at 0.5x and 0.085s at 2x (#5750).
 const RATE_EXPONENT = 0.6;
 
+export const DEFAULT_PARAGRAPH_GAP_SEC = 0.3;
+export const DEFAULT_SENTENCE_GAP_SEC = 0.15;
+
 export const scaleGapForRate = (baseGapSec: number, rate: number): number => {
   if (!(rate > 0)) return baseGapSec;
   // Two decimals: the gaps are sub-second by design, so rounding to a whole

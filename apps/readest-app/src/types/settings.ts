@@ -8,6 +8,7 @@ import { WebSource } from './webSource';
 import { ABSServer } from './audiobookshelf';
 import type { CustomTranslator, TranslationPrompt } from './translation';
 import type { AISettings } from '@/services/ai/types';
+import type { HttpTTSSettings } from '@/services/tts/httpSettings';
 import type { NotebookTab } from '@/store/notebookStore';
 import type { DictionarySettings, ImportedDictionary } from '@/services/dictionaries/types';
 
@@ -571,6 +572,8 @@ export interface SystemSettings {
   icloud: ICloudSettings;
 
   aiSettings: AISettings;
+  // Device-local configuration; credentials live in the secure-item bridge.
+  httpTTS?: HttpTTSSettings;
   /**
    * Per-device id used as the deviceId portion of every HLC this device
    * mints. Lazy-generated on first sync init via uuidv4 (mirrors

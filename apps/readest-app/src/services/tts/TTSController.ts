@@ -20,6 +20,9 @@ import { expandRangeOverRuby } from '@/utils/ruby';
 import { WebSpeechClient } from './WebSpeechClient';
 import { NativeTTSClient } from './NativeTTSClient';
 import { EdgeTTSClient } from './EdgeTTSClient';
+import { HttpTTSClient } from './HttpTTSClient';
+import { DEFAULT_PARAGRAPH_GAP_SEC } from './gap';
+import { useSettingsStore } from '@/store/settingsStore';
 import { SectionTimeline, TimelineSentence } from './SectionTimeline';
 import { hydrateProvisionalDurations } from './ttsDuration';
 import { DownloadableSentence, SectionEnumerator, TTSDownloader } from './TTSDownloader';
@@ -116,7 +119,7 @@ export interface TTSViewBindings {
 // is engine-agnostic, handled entirely in #speak()/forward() below. There is
 // no natural pause here otherwise -- the transition is as fast as the async
 // stop/init overhead allows, which reads as no pause at all.
-export const DEFAULT_PARAGRAPH_GAP_SEC = 0.3;
+export { DEFAULT_PARAGRAPH_GAP_SEC } from './gap';
 
 const drawLoopTint = (rects: DOMRectList, options: Record<string, unknown>) => {
   const g = Overlayer.highlight(rects, options);
@@ -216,6 +219,7 @@ export class TTSController extends EventTarget {
   ttsClient: TTSClient;
   ttsWebClient: TTSClient;
   ttsEdgeClient: EdgeTTSClient;
+  ttsHttpClient: HttpTTSClient | null = null;
   ttsNativeClient: TTSClient | null = null;
   ttsMediaOverlayClient: MediaOverlayClient;
   ttsWebVoices: TTSVoice[] = [];
@@ -235,6 +239,8 @@ export class TTSController extends EventTarget {
     super();
     this.ttsWebClient = new WebSpeechClient(this);
     this.ttsEdgeClient = new EdgeTTSClient(this, appService);
+    const httpTTS = useSettingsStore.getState().settings.httpTTS;
+    if (httpTTS?.enabled) this.ttsHttpClient = new HttpTTSClient(httpTTS, this, appService);
     // Native TTS is backed by Android TextToSpeech and iOS AVSpeechSynthesizer.
     // TODO: implement native TTS client for desktop platforms.
     if (appService?.isAndroidApp || appService?.isIOSApp) {
@@ -428,6 +434,9 @@ export class TTSController extends EventTarget {
     }
     if (await this.ttsWebClient.init()) {
       availableClients.push(this.ttsWebClient);
+    }
+    if (this.ttsHttpClient && (await this.ttsHttpClient.init())) {
+      availableClients.push(this.ttsHttpClient);
     }
     this.ttsClient = availableClients[0] || this.ttsWebClient;
     const preferredClientName = TTSUtils.getPreferredClient();
@@ -1126,6 +1135,7 @@ export class TTSController extends EventTarget {
   // client (same as supportsPlaybackInfo/supportsGapControl's comparison).
   setSentenceGap(sec: number): void {
     this.ttsEdgeClient.setSentenceGap(sec);
+    this.ttsHttpClient?.setSentenceGap(sec);
   }
 
   // Universal (not Edge-only) paragraph-to-paragraph gap, in wall-clock
@@ -1136,6 +1146,7 @@ export class TTSController extends EventTarget {
     // The buffered client needs it too: it schedules this pause as silence on
     // its own audio clock rather than letting #delayParagraphGap sleep for it.
     this.ttsEdgeClient.setParagraphGap(sec);
+    this.ttsHttpClient?.setParagraphGap(sec);
   }
 
   // Abortable delay inserted before auto-advancing to the next paragraph.
@@ -1987,6 +1998,7 @@ export class TTSController extends EventTarget {
 
   async setPrimaryLang(lang: string) {
     if (this.ttsEdgeClient.initialized) this.ttsEdgeClient.setPrimaryLang(lang);
+    if (this.ttsHttpClient?.initialized) this.ttsHttpClient.setPrimaryLang(lang);
     if (this.ttsWebClient.initialized) this.ttsWebClient.setPrimaryLang(lang);
     if (this.ttsNativeClient?.initialized) this.ttsNativeClient?.setPrimaryLang(lang);
     if (this.ttsMediaOverlayClient.initialized) this.ttsMediaOverlayClient.setPrimaryLang(lang);
@@ -2005,6 +2017,7 @@ export class TTSController extends EventTarget {
     const ttsWebVoices = await this.ttsWebClient.getVoices(lang);
     const ttsEdgeVoices = await this.ttsEdgeClient.getVoices(lang);
     const ttsNativeVoices = (await this.ttsNativeClient?.getVoices(lang)) ?? [];
+    const ttsHttpVoices = (await this.ttsHttpClient?.getVoices(lang)) ?? [];
     // The book's own narrator leads the list when there is one: it is the best
     // voice available for that book by a wide margin.
     const narrationVoices = this.narrationAvailable
@@ -2015,6 +2028,7 @@ export class TTSController extends EventTarget {
       ...narrationVoices,
       ...ttsNativeVoices,
       ...ttsEdgeVoices,
+      ...ttsHttpVoices,
       ...ttsWebVoices,
     ];
     return voicesGroups;
@@ -2049,7 +2063,13 @@ export class TTSController extends EventTarget {
     const useNativeTTS = !!this.ttsNativeVoices.find(
       (voice) => (voiceId === '' || voice.id === voiceId) && !voice.disabled,
     );
-    if (useEdgeTTS) {
+    const useHttpTTS =
+      this.ttsHttpClient?.initialized &&
+      (await this.ttsHttpClient.getAllVoices()).some((voice) => voice.id === voiceId);
+    if (useHttpTTS && this.ttsHttpClient) {
+      this.ttsClient = this.ttsHttpClient;
+      await this.ttsClient.setRate(this.ttsRate);
+    } else if (useEdgeTTS) {
       this.ttsClient = this.ttsEdgeClient;
       await this.ttsClient.setRate(this.ttsRate);
     } else if (useNativeTTS) {
@@ -2391,6 +2411,9 @@ export class TTSController extends EventTarget {
     }
     if (this.ttsEdgeClient.initialized) {
       await this.ttsEdgeClient.shutdown();
+    }
+    if (this.ttsHttpClient?.initialized) {
+      await this.ttsHttpClient.shutdown();
     }
     if (this.ttsNativeClient?.initialized) {
       await this.ttsNativeClient.shutdown();

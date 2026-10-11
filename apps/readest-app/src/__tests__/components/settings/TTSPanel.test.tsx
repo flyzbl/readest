@@ -31,14 +31,17 @@ vi.mock('@/store/readerStore', () => ({
 }));
 
 vi.mock('@/store/settingsStore', () => ({
-  useSettingsStore: () => ({
-    settings: {
-      globalViewSettings: state.viewSettings,
-      globalReadSettings: { customTtsHighlightColors: [] },
-    },
-    setSettings: vi.fn(),
-    saveSettings: vi.fn(),
-  }),
+  useSettingsStore: Object.assign(
+    () => ({
+      settings: {
+        globalViewSettings: state.viewSettings,
+        globalReadSettings: { customTtsHighlightColors: [] },
+      },
+      setSettings: vi.fn(),
+      saveSettings: vi.fn(),
+    }),
+    { getState: () => ({ settings: {} }) },
+  ),
 }));
 
 vi.mock('@/hooks/useResetSettings', () => ({

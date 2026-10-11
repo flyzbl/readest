@@ -5,6 +5,8 @@ import {
   isCustomizationAllowed,
   isCustomTranslatorAllowed,
   isSelfHosted,
+  isTTSCacheAllowed,
+  getStoragePlanData,
 } from '@/utils/access';
 
 vi.mock('jwt-decode', () => ({ jwtDecode: vi.fn() }));
@@ -51,6 +53,7 @@ describe('isCustomizationAllowed', () => {
 describe('self-hosted deployments', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    delete window.__READEST_RUNTIME_CONFIG;
   });
 
   it('is off by default', () => {
@@ -73,6 +76,16 @@ describe('self-hosted deployments', () => {
     vi.stubEnv('SELF_HOSTED', '');
     vi.stubEnv('NEXT_PUBLIC_SELF_HOSTED', 'true');
     expect(isSelfHosted()).toBe(true);
+  });
+
+  it('honors the web runtime flag without changing the cloud storage plan', () => {
+    window.__READEST_RUNTIME_CONFIG = { selfHosted: true };
+    expect(isCustomizationAllowed('free', false)).toBe(true);
+    expect(isTTSCacheAllowed('free', false)).toBe(true);
+    expect(isCustomTranslatorAllowed(null)).toBe(true);
+    const storage = getStoragePlanData(mockToken({ plan: 'free' }));
+    delete window.__READEST_RUNTIME_CONFIG;
+    expect(getStoragePlanData(mockToken({ plan: 'free' }))).toEqual(storage);
   });
 });
 

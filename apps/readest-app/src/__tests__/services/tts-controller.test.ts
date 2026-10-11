@@ -5,6 +5,7 @@ import { TTSGranularity, TTSVoicesGroup } from '@/services/tts/types';
 import { TTSUtils } from '@/services/tts/TTSUtils';
 import { FoliateView } from '@/types/view';
 import { AppService } from '@/types/system';
+import { useSettingsStore } from '@/store/settingsStore';
 
 // --- Mock all heavy dependencies so we never import real TTS clients ---
 
@@ -171,6 +172,67 @@ function createMockAppService(isAndroid = false, isIOS = false): AppService {
 }
 
 // --- Tests ---
+
+describe('HTTP speech registration', () => {
+  const config = {
+    enabled: true,
+    baseUrl: 'https://tts.example/v1',
+    model: 'model',
+    voice: 'voice',
+  };
+
+  afterEach(() => {
+    useSettingsStore.setState(({ settings }) => ({
+      settings: { ...settings, httpTTS: undefined },
+    }));
+    vi.mocked(TTSUtils.getPreferredClient).mockReturnValue(null);
+    vi.restoreAllMocks();
+  });
+
+  test('preserves the existing default and exposes the configured voice for any language', async () => {
+    useSettingsStore.setState(({ settings }) => ({ settings: { ...settings, httpTTS: config } }));
+    const controller = new TTSController(createMockAppService(), createMockView());
+    await controller.init();
+    expect(controller.ttsClient).toBe(controller.ttsEdgeClient);
+    const group = (await controller.getVoices('zh-CN')).find((group) => group.id === 'http-tts');
+    expect(group?.voices).toEqual([
+      { id: 'http-tts:voice', name: 'voice', lang: 'zh-CN', disabled: false },
+    ]);
+    await controller.setVoice('http-tts:voice', 'zh-CN');
+    expect(controller.ttsClient).toBe(controller.ttsHttpClient);
+    expect(controller.ttsClient.getCapabilities()).toMatchObject({
+      wordBoundaries: false,
+      mediaClock: true,
+      gapControl: true,
+    });
+    expect(controller.ttsClient.getGranularities()).toEqual(['sentence']);
+    const sentenceGap = vi.spyOn(controller.ttsHttpClient!, 'setSentenceGap');
+    const paragraphGap = vi.spyOn(controller.ttsHttpClient!, 'setParagraphGap');
+    controller.setSentenceGap(0.2);
+    controller.setParagraphGap(0.4);
+    expect(sentenceGap).toHaveBeenCalledWith(0.2);
+    expect(paragraphGap).toHaveBeenCalledWith(0.4);
+    await controller.shutdown();
+    expect(controller.ttsHttpClient?.initialized).toBe(false);
+  });
+
+  test('restores the HTTP preference only while enabled', async () => {
+    vi.mocked(TTSUtils.getPreferredClient).mockReturnValue('http-tts');
+    useSettingsStore.setState(({ settings }) => ({ settings: { ...settings, httpTTS: config } }));
+    const enabled = new TTSController(createMockAppService(), createMockView());
+    await enabled.init();
+    expect(enabled.ttsClient).toBe(enabled.ttsHttpClient);
+    await enabled.shutdown();
+    useSettingsStore.setState(({ settings }) => ({
+      settings: { ...settings, httpTTS: { ...config, enabled: false } },
+    }));
+    const disabled = new TTSController(createMockAppService(), createMockView());
+    await disabled.init();
+    expect(disabled.ttsHttpClient).toBeNull();
+    expect(disabled.ttsClient).toBe(disabled.ttsEdgeClient);
+    await disabled.shutdown();
+  });
+});
 
 describe('TTSController', () => {
   let controller: TTSController;

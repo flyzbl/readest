@@ -70,6 +70,20 @@ describe('WebSpeechClient getVoices', () => {
   });
 });
 
+describe('WebSpeechClient without a Web Speech engine (Android WebView)', () => {
+  test('stop, pause and resume are safe before an engine is available', async () => {
+    Object.defineProperty(window, 'speechSynthesis', {
+      value: undefined,
+      configurable: true,
+    });
+    const client = new WebSpeechClient();
+    await expect(client.init()).resolves.toBe(false);
+    await expect(client.stop()).resolves.toBeUndefined();
+    await expect(client.pause()).resolves.toBe(true);
+    await expect(client.resume()).resolves.toBe(true);
+  });
+});
+
 // A platform with no speech voices reports an empty list and never fires
 // 'voiceschanged'. init() used to await that event forever, which wedged
 // TTSController.init() and so took down every other engine with it —

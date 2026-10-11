@@ -195,17 +195,20 @@ export class WebSpeechClient implements TTSClient {
   }
 
   async pause() {
-    this.#synth.pause();
+    // Android WebView may expose no Web Speech engine at all. A controller
+    // cancelled during init can still stop the default client before it has
+    // selected an available native/HTTP engine.
+    this.#synth?.pause();
     return true;
   }
 
   async resume() {
-    this.#synth.resume();
+    this.#synth?.resume();
     return true;
   }
 
   async stop() {
-    this.#synth.cancel();
+    this.#synth?.cancel();
   }
 
   setPrimaryLang(lang: string) {

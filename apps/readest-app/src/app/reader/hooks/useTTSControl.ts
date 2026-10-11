@@ -84,6 +84,9 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
   const previousSectionLabelRef = useRef<string | undefined>(undefined);
   const ttsControllerRef = useRef<TTSController | null>(null);
   const isStartingTTSRef = useRef(false);
+  // A stop invalidates every in-flight startup before asynchronous init/attach
+  // can publish a "playing" toolbar for a controller already shut down.
+  const ttsStartGenerationRef = useRef(0);
   // Last broadcast playback state, so a follower engaging mid-session can be
   // replayed the current state on demand (see handleTTSSyncRequest).
   const playbackStateRef = useRef<'playing' | 'paused' | 'stopped'>('stopped');
@@ -853,6 +856,8 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
   // handleStop (defined before handleTTSSpeak/handleTTSStop which reference it)
   const handleStop = useCallback(
     async (bookKey: string) => {
+      ttsStartGenerationRef.current++;
+      isStartingTTSRef.current = false;
       const ttsController = ttsControllerRef.current;
       // Reset all UI/session state up front — including the TTS toggle
       // (ttsEnabled) and indicator that color the TTS icon — so disabling TTS
@@ -893,6 +898,8 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
     // end up creating two TTSController instances that speak simultaneously.
     if (isStartingTTSRef.current) return;
     isStartingTTSRef.current = true;
+    const startGeneration = ++ttsStartGenerationRef.current;
+    const startIsCurrent = () => startGeneration === ttsStartGenerationRef.current;
 
     try {
       const view = getView(bookKey);
@@ -1004,7 +1011,9 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
         // own narration or a synthesized voice.
         ttsController.useNarration = viewSettings.ttsUseNarration ?? true;
         await ttsController.init();
+        if (!startIsCurrent()) return;
         await ttsController.initViewTTS(ttsFromIndex);
+        if (!startIsCurrent()) return;
         ttsController.updateHighlightOptions(
           getTTSHighlightOptions(
             viewSettings.ttsHighlightOptions,
@@ -1043,23 +1052,28 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
           ttsController.speak(ssml, oneTime && !narrateSelection, () => handleStop(bookKey));
           ttsController.setTargetLang(getTTSTargetLang() || '');
         } else {
-          // Nothing to speak: roll back the optimistic playing state.
-          setIsPlaying(false);
+          // An empty section cannot own an active audio session or toolbar.
+          await handleStop(bookKey);
+          return;
         }
+        if (!startIsCurrent()) return;
         setTtsClientsInitialized(true);
         syncClientCapabilities();
         setTTSEnabled(bookKey, true);
       } catch (error) {
-        setShowIndicator(false);
-        setIsPlaying(false);
-        eventDispatcher.dispatch('toast', {
-          message: _('TTS not supported for this document'),
-          type: 'error',
-        });
-        console.error(error);
+        if (startIsCurrent()) {
+          eventDispatcher.dispatch('toast', {
+            message: _('TTS not supported for this document'),
+            type: 'error',
+          });
+          console.error(error);
+          // A failed initialization must release the claimed session and the
+          // blue headset icon, not merely hide the mini player.
+          await handleStop(bookKey);
+        }
       }
     } finally {
-      isStartingTTSRef.current = false;
+      if (startIsCurrent()) isStartingTTSRef.current = false;
     }
   };
 
@@ -1069,6 +1083,8 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
     if (ttsControllerRef.current) {
       await handleStop(bookKey);
     } else {
+      ttsStartGenerationRef.current++;
+      isStartingTTSRef.current = false;
       // A stale toolbar flag can survive after the controller disappears.
       // stopBook is a no-op without an active managed session, so clear the
       // UI now or the headphones button stays stuck on the stop action.

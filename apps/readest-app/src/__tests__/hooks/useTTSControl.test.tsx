@@ -414,6 +414,80 @@ describe('useTTSControl concurrent tts-speak events', () => {
   });
 });
 
+describe('useTTSControl start/stop generation isolation', () => {
+  beforeEach(() => {
+    ttsControllerInstances.length = 0;
+    pendingInitResolvers.length = 0;
+  });
+
+  afterEach(() => cleanup());
+
+  it('does not resurrect a stopped controller after asynchronous initialization completes', async () => {
+    render(<Harness />);
+    const setTTSEnabled = getSetTTSEnabledMock();
+    setTTSEnabled.mockClear();
+
+    let starting!: Promise<void>;
+    await act(async () => {
+      starting = eventDispatcher.dispatch('tts-speak', { bookKey: 'book-1' });
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    });
+    expect(ttsControllerInstances).toHaveLength(1);
+    expect(pendingInitResolvers).toHaveLength(1);
+
+    await act(async () => {
+      await eventDispatcher.dispatch('tts-stop', { bookKey: 'book-1' });
+      pendingInitResolvers.shift()!();
+      await starting;
+    });
+
+    expect(setTTSEnabled).toHaveBeenCalledWith('book-1', false);
+    expect(setTTSEnabled).not.toHaveBeenCalledWith('book-1', true);
+    expect(
+      (ttsControllerInstances[0] as { speak: ReturnType<typeof vi.fn> }).speak,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('keeps a replacement session alive when the old initialization finishes late', async () => {
+    render(<Harness />);
+    const setTTSEnabled = getSetTTSEnabledMock();
+    setTTSEnabled.mockClear();
+
+    let oldStart!: Promise<void>;
+    await act(async () => {
+      oldStart = eventDispatcher.dispatch('tts-speak', { bookKey: 'book-1' });
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    });
+    await act(async () => {
+      await eventDispatcher.dispatch('tts-stop', { bookKey: 'book-1' });
+    });
+
+    let replacement!: Promise<void>;
+    await act(async () => {
+      replacement = eventDispatcher.dispatch('tts-speak', { bookKey: 'book-1' });
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    });
+    expect(ttsControllerInstances).toHaveLength(2);
+
+    await act(async () => {
+      pendingInitResolvers.shift()!();
+      await oldStart;
+    });
+    await act(async () => {
+      pendingInitResolvers.shift()!();
+      await replacement;
+    });
+
+    expect(setTTSEnabled).toHaveBeenLastCalledWith('book-1', true);
+    expect(
+      (ttsControllerInstances[0] as { speak: ReturnType<typeof vi.fn> }).speak,
+    ).not.toHaveBeenCalled();
+    expect(
+      (ttsControllerInstances[1] as { speak: ReturnType<typeof vi.fn> }).speak,
+    ).toHaveBeenCalled();
+  });
+});
+
 // Reading a selection aloud has to mean different things for the two kinds of
 // engine: a synthesizer can render the selected words, a recording only has the
 // clips the publisher timed. Handing raw text to the narration client ended the
